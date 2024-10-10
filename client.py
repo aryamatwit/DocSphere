@@ -1,7 +1,5 @@
 import socket
 
-import socket
-
 HOST = '10.220.52.74' #local host
 PORT = 9999
 
@@ -12,17 +10,21 @@ def start_client():
     welcomemsg = client.recv(1024).decode('utf-8')
 
     while True:
-        msg = input("You: ")
-        if msg.lower() == 'exit':
-            break
+        try:
+            msg = input("You: ")
+            if msg.lower() == 'exit':
+                break
 
-        client.send(msg.encode('utf-8'))
-        response = client.recv(1024).decode('utf-8')
-        print(f"Server: {response}")
+            client.send(msg.encode('utf-8'))
+            response = client.recv(1024).decode('utf-8')
+            print(f"Server: {response}")
+        
+        except socket.error as errormsg:
+            print(f"Communication error with server. {errormsg}")
 
     client.close()
 
-if input("Would you like to connect to the server: ").lower() == 'yes':
+if input("Would you like to connect to the server (yes/no)? ").lower() == 'yes':
     start_client()
 
 
