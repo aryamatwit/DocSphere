@@ -13,7 +13,7 @@ def start_client():
 
     while True:
         msg = input("You: ")
-        if msg.lower == 'exit':
+        if msg.lower() == 'exit':
             break
 
         client.send(msg.encode('utf-8'))
@@ -22,7 +22,7 @@ def start_client():
 
     client.close()
 
-if input("Would you like to connect to the server: ").lower == 'yes':
+if input("Would you like to connect to the server: ").lower() == 'yes':
     start_client()
 
 
