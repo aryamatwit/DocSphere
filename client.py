@@ -2,7 +2,7 @@ import socket
 import threading
 
 # Define the server's IP address and port number
-HOST = '10.220.52.74' #local host
+HOST = '10.220.44.200' #local host
 PORT = 9999
 
 # Function to handle communication with the server
