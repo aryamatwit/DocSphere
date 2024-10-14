@@ -73,41 +73,33 @@ def broadcast_message(message, sender_socket):
                     connected_clients.remove(client)
                     client.close()
 
-def start_server():
     # Create a TCP socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print('Socket created!')
-    try:
-        server_socket.bind((HOST, PORT))
-        print('Socket bind complete.')
-    except socket.error as msg:
-        print(f'Bind failed. Error code: {str(msg[0])} Message: {msg[1]}')
-        sys.exit()
-        
-    # Listen for incoming connections (maximum of 10)
-    server_socket.listen(10)
-
-    print('Socket is now listening...')
-    while True:
-        try:
-            # Accept new client connections
-            client_socket, client_address = server_socket.accept()
-            connected_clients.append(client_socket)
-            print(f'New connection established with {client_address[0]}:{client_address[1]}')
-            
-            # Create a new thread for each connected client
-            client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
-            client_thread.start()
-            send_chat_history(client_socket)
-            
-        except socket.error as msg:
-            print(f'Accept failed. Error code: {str(msg[0])} Message: {msg[1]}')
-            server_socket.close()
-            break
-
-if input("Would you like to start the server (yes/no)? ").lower() == 'yes':
-    start_server()
-else:
-    print("Server shutdown.")
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+print('Socket created!')
+try:
+    server_socket.bind((HOST, PORT))
+    print('Socket bind complete.')
+except socket.error as msg:
+    print(f'Bind failed. Error code: {str(msg[0])} Message: {msg[1]}')
     sys.exit()
-            
+        
+# Listen for incoming connections (maximum of 10)
+server_socket.listen(10)
+
+print('Socket is now listening...')
+while True:
+    try:
+        # Accept new client connections
+        client_socket, client_address = server_socket.accept()
+        connected_clients.append(client_socket)
+        print(f'New connection established with {client_address[0]}:{client_address[1]}')
+                
+        # Create a new thread for each connected client
+        client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
+        client_thread.start()
+        send_chat_history(client_socket)
+                
+    except socket.error as msg:
+        print(f'Accept failed. Error code: {str(msg[0])} Message: {msg[1]}')
+        server_socket.close()
+        break
