@@ -5,38 +5,72 @@ import threading
 HOST = ''
 PORT = 9999
 
+connected_clients = []
+clients_lock = threading.Lock()
+chat_history = []  
+
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
     print(f'Connected with {address[0]}:{str(address[1])}')
     client_socket.sendall((f'Connected with {address[0]}:{str(address[1])}').encode())
 
+    client_socket.sendall((f'Connected with {address[0]}:{str(address[1])}').encode())
+
+    # Add the new client to the list of connected clients
+    with clients_lock:
+        connected_clients.append(client_socket)
+
     while True:
         try:
             # Receive message from client
-            client_message = client_socket.recv(50).decode()
-            print(f"Client {address[0]}: {client_message}")
-            
-            # If the client sends 'end', close the connection
-            if client_message.lower() == "end":
-                print(f"Connection closed by client {address[0]}")
+            client_message = client_socket.recv(1024).decode()
+            if client_message:
+                print(f"Client {address[0]}: {client_message}")
+
+                # If the client sends 'end', close the connection and remove from the list
+                if client_message.lower() == "end":
+                    print(f"Connection closed by client {address[0]}")
+                    with clients_lock:
+                        connected_clients.remove(client_socket)
+                    client_socket.close()
+                    break
+
+                with clients_lock:
+                    chat_history.append(f"Client {address[0]}: {client_message}")
+
+                # Broadcast the received message to all connected clients
+                broadcast_message(f"Client {address[0]}: {client_message}", client_socket)
+            else:
+                # Remove the client if no message is received (connection closed)
+                with clients_lock:
+                    connected_clients.remove(client_socket)
                 client_socket.close()
                 break
-            
-            # Server message to send back to client
-            server_message = input("You: ")
-            if server_message.lower() == "end":
-                client_socket.sendall("end".encode())
-                print("Connection closed by server.")
-                client_socket.close()
-                break
-            
-            # Send the server's message to the client
-            client_socket.sendall(server_message.encode())
         
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
+            with clients_lock:
+                connected_clients.remove(client_socket)
             client_socket.close()
             break
+
+def send_chat_history(client_socket):
+    if chat_history:
+        client_socket.sendall("Chat History:\n".encode())
+        for message in chat_history:
+            client_socket.sendall(f"{message}\n".encode())
+
+# Function to broadcast a message to all connected clients except the sender
+def broadcast_message(message, sender_socket):
+    with clients_lock:
+        for client in connected_clients:
+            if client != sender_socket:
+                try:
+                    client.sendall(message.encode())
+                except:
+                    # If sending fails, remove the client from the list
+                    client.close()
+                    connected_clients.remove(client)
 
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
