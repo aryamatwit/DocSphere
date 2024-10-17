@@ -1,16 +1,20 @@
 import socket
 import sys
 import threading
+import json
+
 
 HOST = ''
 PORT = 9999
 
 connected_clients = []
 clients_lock = threading.Lock()
-chat_history = []
+document = ""
+version = 0
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
+    global document, version
     print(f'Connected with {address[0]}:{str(address[1])}')
     client_socket.sendall(f'Connected with {address[0]}:{str(address[1])}'.encode())
 
@@ -18,7 +22,7 @@ def handle_client(client_socket, address):
     with clients_lock:
         connected_clients.append(client_socket)
 
-    send_chat_history(client_socket)  # Send chat history to the new client
+    send_document(client_socket)  # Send document to the new client
 
     while True:
         try:
@@ -32,11 +36,22 @@ def handle_client(client_socket, address):
             if client_message.lower() == "end":
                 print(f"Connection closed by client {address[0]}")
                 break  # Close connection if the message is 'end'
+            
+            operation_data = json.loads(client_message)
+            client_version = operation_data.get('version', 0)
 
-            with clients_lock:
-                chat_history.append(f"Client {address[0]}: {client_message}")
+            # Transform the operation if the client's version is outdated
+            transformed_operation = transform_operation(operation_data, client_version)
 
-            broadcast_message(f"Client {address[0]}: {client_message}", client_socket)
+            # Apply the operation to the shared document
+            document = apply_operation(document, transformed_operation)
+
+            # Increment the document version
+            version += 1
+            transformed_operation['version'] = version
+
+            # Broadcast the transformed operation to all other clients
+            broadcast_operation(transformed_operation, client_socket)
 
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
@@ -48,24 +63,49 @@ def handle_client(client_socket, address):
     client_socket.close()
     print(f"Connection with {address[0]} closed.")
 
-# Function to send chat history to a new client
-def send_chat_history(client_socket):
-    if chat_history:
-        try:
-            client_socket.sendall("Chat History:\n".encode())
-            for message in chat_history:
-                client_socket.sendall(f"{message}\n".encode())
-        except socket.error as msg:
-            print(f"Error sending chat history: {msg}")
 
-# Function to broadcast a message to all connected clients except the sender
-def broadcast_message(message, sender_socket):
+# Function to send the current document to a new client
+def send_document(client_socket):
+    with clients_lock:
+        client_socket.sendall(json.dumps({'document': document, 'version': version}).encode())
+
+# Function to apply an operation to the shared document
+def apply_operation(doc, operation):
+    action = operation['action']
+    position = operation['position']
+    text = operation.get('text', '')
+
+    if action == 'insert':
+        doc = doc[:position] + text + doc[position:]
+    elif action == 'delete':
+        length = operation['length']
+        doc = doc[:position] + doc[position+length:]
+
+    return doc
+
+# Function to transform an operation based on the current document version
+def transform_operation(operation, client_version):
+    global version
+    # For simplicity, we assume that only insert and delete operations are transformed.
+    # A more complex transformation would be needed for real applications.
+    if client_version < version:
+        # Example transformation logic (very simplistic):
+        # This could be improved with more sophisticated rules.
+        if operation['action'] == 'insert':
+            operation['position'] = min(operation['position'], len(document))
+        elif operation['action'] == 'delete':
+            operation['position'] = min(operation['position'], len(document))
+            operation['length'] = min(operation['length'], len(document) - operation['position'])
+
+    return operation
+
+def broadcast_operation(operation, sender_socket):
     with clients_lock:
         for client in connected_clients:
             if client != sender_socket:
                 try:
-                    client.sendall(message.encode())
-                except socket.error:
+                    client.sendall(json.dumps(operation).encode())
+                except Exception:
                     print(f"Failed to send message to a client. Removing client.")
                     client.close()
                     connected_clients.remove(client)
