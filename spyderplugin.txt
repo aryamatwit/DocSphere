@@ -1,0 +1,4 @@
+# Steps to create a spyder plugin
+
+pip install cookiecutter
+# cookiecutter https://github.com/spyder-ide/spyder-plugin-cookiecutter
