@@ -3,13 +3,30 @@ import threading
 import json
 import tkinter as tk
 from tkinter import messagebox
+import os
 
 # Define the server's IP address and port number
-HOST = '10.220.44.200'  
+HOST = '10.220.44.200'  # Use '127.0.0.1' for localhost testing
 PORT = 9999
 
 local_document = ""
 version = 0  # Client's version of the document
+filename = "document.txt"  # File to save the document
+
+# Function to load document from a file
+def load_document_from_file():
+    global local_document
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as file:
+            local_document = file.read()
+    else:
+        local_document = ""
+
+# Function to save the current document to a file
+def save_document_to_file():
+    global local_document
+    with open(filename, 'w', encoding='utf-8') as file:
+        file.write(local_document)
 
 # Function to apply an operation to the local document
 def apply_operation(doc, operation):
@@ -40,10 +57,13 @@ def receive_msg(client_socket, text_widget):
 
                 # Update the local document version
                 version = operation['version']
-                
+
                 # Update the text widget (GUI)
                 text_widget.delete(1.0, tk.END)
                 text_widget.insert(tk.END, local_document)
+
+                # Save updated document to file
+                save_document_to_file()
             else:
                 break
         except Exception as e:
@@ -88,12 +108,18 @@ def start_client():
         welcome_msg = client.recv(1024).decode('utf-8')
         print(welcome_msg)
 
+        # Load document from file
+        load_document_from_file()
+
         # Setup the tkinter window
         root = tk.Tk()
         root.title("Collaborative Document Editor")
 
         text_widget = tk.Text(root, wrap='word')
         text_widget.pack(expand=True, fill='both')
+
+        # Load the document into the text widget
+        text_widget.insert(tk.END, local_document)
 
         # Start a thread to receive messages from the server
         receive_thread = threading.Thread(target=receive_msg, args=(client, text_widget))
