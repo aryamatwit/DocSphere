@@ -3,14 +3,13 @@ import sys
 import threading
 import json
 
-
 HOST = ''
 PORT = 9999
 
 connected_clients = []
 clients_lock = threading.Lock()
-document = ""
-version = 0
+document = ""  # Shared document state
+version = 0    # Version of the document
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
@@ -22,7 +21,8 @@ def handle_client(client_socket, address):
     with clients_lock:
         connected_clients.append(client_socket)
 
-    send_document(client_socket)  # Send document to the new client
+    # Send the full document state to the new client
+    send_document(client_socket)
 
     while True:
         try:
@@ -57,16 +57,17 @@ def handle_client(client_socket, address):
             print(f"Communication error with client {address[0]}: {str(msg)}")
             break  # Exit on communication error
 
+    # Remove client from connected clients list
     with clients_lock:
         if client_socket in connected_clients:
             connected_clients.remove(client_socket)
     client_socket.close()
     print(f"Connection with {address[0]} closed.")
 
-
 # Function to send the current document to a new client
 def send_document(client_socket):
     with clients_lock:
+        # Send the full document and the current version
         client_socket.sendall(json.dumps({'document': document, 'version': version}).encode())
 
 # Function to apply an operation to the shared document
@@ -79,18 +80,16 @@ def apply_operation(doc, operation):
         doc = doc[:position] + text + doc[position:]
     elif action == 'delete':
         length = operation['length']
-        doc = doc[:position] + doc[position+length:]
+        doc = doc[:position] + doc[position + length:]
 
     return doc
 
 # Function to transform an operation based on the current document version
 def transform_operation(operation, client_version):
     global version
-    # For simplicity, we assume that only insert and delete operations are transformed.
-    # A more complex transformation would be needed for real applications.
+    # Simplistic transformation logic, improve as needed
     if client_version < version:
-        # Example transformation logic (very simplistic):
-        # This could be improved with more sophisticated rules.
+        # Adjust position if necessary based on current document version
         if operation['action'] == 'insert':
             operation['position'] = min(operation['position'], len(document))
         elif operation['action'] == 'delete':

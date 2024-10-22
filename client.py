@@ -6,7 +6,7 @@ from tkinter import messagebox
 import os
 
 # Define the server's IP address and port number
-HOST = '10.220.44.200'  # Use '127.0.0.1' for localhost testing
+HOST = '127.0.0.1'  # Use '127.0.0.1' for localhost testing
 PORT = 9999
 
 local_document = ""
@@ -50,13 +50,14 @@ def receive_msg(client_socket, text_widget):
             msg = client_socket.recv(1024).decode('utf-8')
             if msg:
                 operation = json.loads(msg)
-                print(f"\nReceived operation: {operation}")
-
-                # Apply the operation to the local document
-                local_document = apply_operation(local_document, operation)
-
-                # Update the local document version
-                version = operation['version']
+                if 'document' in operation:
+                    # Full document received
+                    local_document = operation['document']
+                    version = operation['version']
+                else:
+                    # Operation received
+                    local_document = apply_operation(local_document, operation)
+                    version = operation['version']
 
                 # Update the text widget (GUI)
                 text_widget.delete(1.0, tk.END)
@@ -108,39 +109,26 @@ def start_client():
         welcome_msg = client.recv(1024).decode('utf-8')
         print(welcome_msg)
 
-        # Load document from file
-        load_document_from_file()
-
         # Setup the tkinter window
         root = tk.Tk()
         root.title("Collaborative Document Editor")
 
-        text_widget = tk.Text(root, wrap='word')
+        text_widget = tk.Text(root, wrap='word', font=('Arial', 12))
         text_widget.pack(expand=True, fill='both')
 
-        # Load the document into the text widget
-        text_widget.insert(tk.END, local_document)
+        # Bind keyboard events for text insertions and deletions
+        text_widget.bind("<KeyPress>", lambda event: insert_text(event, client, text_widget))
+        text_widget.bind("<BackSpace>", lambda event: delete_text(event, client, text_widget))
 
         # Start a thread to receive messages from the server
         receive_thread = threading.Thread(target=receive_msg, args=(client, text_widget))
         receive_thread.start()
 
-        # Bind key events to capture cursor-based insertions
-        text_widget.bind("<KeyPress>", lambda event: insert_text(event, client, text_widget))
-        text_widget.bind("<BackSpace>", lambda event: delete_text(event, client, text_widget))
-
-        # Close the connection gracefully when the window is closed
-        def on_closing():
-            if messagebox.askokcancel("Quit", "Do you want to quit?"):
-                client.close()
-                root.destroy()
-
-        root.protocol("WM_DELETE_WINDOW", on_closing)
         root.mainloop()
 
     except socket.error as err:
         print(f"Failed to connect to the server: {err}")
 
 # Prompt the user to connect to the server
-if __name__ == "__main__":
+if input("Would you like to connect to the server (yes/no)? ").lower() == 'yes':
     start_client()
