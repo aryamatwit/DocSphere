@@ -2,7 +2,7 @@ import socket
 import threading
 import tkinter as tk
 
-HOST = '127.0.0.1'  # Use '127.0.0.1' for localhost testing
+HOST = '10.220.44.200'  
 PORT = 9999
 
 local_document = ""  # The local document content
@@ -41,7 +41,7 @@ def start_client():
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((HOST, PORT))
 
-        # Setup the tkinter window
+        
         root = tk.Tk()
         root.title("Collaborative Document Editor")
 

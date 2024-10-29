@@ -17,7 +17,7 @@ def handle_client(client_socket, address):
     with clients_lock:
         connected_clients.append(client_socket)
 
-    # Send the full document state to the new client when they connect
+    # Immediately send the latest document to the new client
     send_document(client_socket)
 
     while True:
@@ -34,34 +34,34 @@ def handle_client(client_socket, address):
             document = client_message
 
             # Broadcast the updated document to all clients
-            broadcast_document(client_socket)
+            broadcast_document()
 
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
             break
 
+    # Remove the client from the connected clients list on disconnection
     with clients_lock:
         if client_socket in connected_clients:
             connected_clients.remove(client_socket)
     client_socket.close()
     print(f"Connection with {address[0]} closed.")
 
-# Function to send the current document to a new client
+# Function to send the current document to a specific client
 def send_document(client_socket):
     with clients_lock:
         client_socket.sendall(document.encode())
 
 # Function to broadcast the current document to all clients
-def broadcast_document(sender_socket):
+def broadcast_document():
     with clients_lock:
         for client in connected_clients:
-            if client != sender_socket:
-                try:
-                    client.sendall(document.encode())
-                except Exception:
-                    print(f"Failed to send document to a client. Removing client.")
-                    client.close()
-                    connected_clients.remove(client)
+            try:
+                client.sendall(document.encode())
+            except Exception:
+                print(f"Failed to send document to a client. Removing client.")
+                client.close()
+                connected_clients.remove(client)
 
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
