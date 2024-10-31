@@ -6,7 +6,7 @@ HOST = '10.220.44.200'
 PORT = 9999
 
 local_document = ""  # The local document content
-update_delay = 500  # Delay in milliseconds
+update_delay = 250  # Delay in milliseconds
 
 # Function to update the document received from the server
 def update_document_from_server(text_widget, client_socket):
