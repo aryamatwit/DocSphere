@@ -8,10 +8,11 @@ PORT = 9999
 connected_clients = []
 clients_lock = threading.Lock()
 document = ""  # Shared document state
+locked_section = None  # Currently locked section
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
-    global document
+    global document, locked_section
     print(f'Connected with {address[0]}:{str(address[1])}')
     
     # Add the new client to the list of connected clients
@@ -23,19 +24,30 @@ def handle_client(client_socket, address):
 
     while True:
         try:
-            # Receive the document data from the client (full or partial)
+            # Receive data from the client
             client_message = client_socket.recv(4096).decode('utf-8')
             if not client_message:
                 print(f"Client {address[0]} disconnected.")
                 break
 
-            print(f"Received updated document from client {address[0]}")
+            if client_message.startswith("LOCK_REQUEST"):
+                # Handle lock request
+                start, end = map(int, client_message.split()[1:])
+                if locked_section is None or locked_section == (start, end):
+                    locked_section = (start, end)
+                    client_socket.sendall("LOCK_GRANTED".encode())
+                else:
+                    client_socket.sendall("LOCK_DENIED".encode())
 
-            # Update the shared document with what the client sent
-            document = client_message
+            elif client_message.startswith("RELEASE_LOCK"):
+                # Handle lock release
+                locked_section = None
 
-            # Broadcast the updated document to all clients
-            broadcast_document()
+            else:
+                # Update document only if client holds the lock
+                if locked_section is None:
+                    document = client_message
+                    broadcast_document()
 
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
