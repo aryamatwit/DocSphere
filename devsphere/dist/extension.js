@@ -37,9 +37,6 @@ module.exports = __toCommonJS(extension_exports);
 var vscode = __toESM(require("vscode"));
 function activate(context) {
   console.log('Congratulations, your extension "devsphere" is now active!');
-  const terminal = vscode.window.createTerminal("Python Client");
-  terminal.sendText("python clientCopy.py");
-  terminal.show();
   const disposable = vscode.commands.registerCommand("devsphere.helloWorld", () => {
     vscode.window.showInformationMessage("Hello World from DevSphere!");
   });
