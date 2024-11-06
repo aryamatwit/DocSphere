@@ -1,6 +1,7 @@
 import socket
 import threading
 import tkinter as tk
+from tkinter import ttk
 
 HOST = '10.220.44.200'  
 PORT = 9999
@@ -9,7 +10,7 @@ local_document = ""  # The local document content
 update_delay = 500  # Delay in milliseconds
 
 # Function to update the document received from the server
-def update_document_from_server(text_widget, client_socket):
+def update_document_from_server(text_widget, client_socket, status_bar):
     global local_document
     while True:
         try:
@@ -18,8 +19,9 @@ def update_document_from_server(text_widget, client_socket):
             if server_message:
                 # Merge the server update into the local document
                 merge_document(text_widget, server_message)
-
+                status_bar.config(text=f"Connected with server: {HOST}")
         except Exception as e:
+            status_bar.config(text="Disconnected")
             print(f"[ERROR] Lost connection to the server: {e}")
             break
 
@@ -57,6 +59,14 @@ def on_key_release(event, client_socket, text_widget):
     # Schedule a new update
     on_key_release.after_id = text_widget.after(update_delay, send_partial_update, client_socket, text_widget)
 
+# Adds line numbers to the text widget
+def add_line_numbers(text_widget, line_number_widget):
+    line_numbers = '\n'.join(str(i) for i in range(1, int(text_widget.index('end').split('.')[0])))
+    line_number_widget.config(state='normal')
+    line_number_widget.delete(1.0, 'end')
+    line_number_widget.insert('end', line_numbers)
+    line_number_widget.config(state='disabled')
+
 # Start the client-side program
 def start_client():
     try:
@@ -64,16 +74,37 @@ def start_client():
         client.connect((HOST, PORT))
 
         root = tk.Tk()
-        root.title("Collaborative Document Editor")
+        root.title("Collaborative Code Editor")
 
-        text_widget = tk.Text(root, wrap='word', font=('Arial', 12))
-        text_widget.pack(expand=True, fill='both')
+        # Create main frames for layout
+        main_frame = tk.Frame(root)
+        main_frame.pack(expand=True, fill='both')
+
+        # Line numbers frame
+        line_numbers = tk.Text(main_frame, width=4, padx=4, takefocus=0, border=0, background='lightgrey', state='disabled')
+        line_numbers.pack(side='left', fill='y')
+
+        # Code editor text widget with font settings
+        text_widget = tk.Text(main_frame, wrap='none', font=('Courier New', 12), undo=True)
+        text_widget.pack(expand=True, fill='both', side='left')
+
+        # Scrollbars
+        y_scroll = ttk.Scrollbar(root, orient='vertical', command=text_widget.yview)
+        y_scroll.pack(side='right', fill='y')
+        text_widget.config(yscrollcommand=y_scroll.set)
+
+        # Status bar to show connection status
+        status_bar = tk.Label(root, text=f"Connected with server: {HOST}", bd=1, relief='sunken', anchor='w')  # Updated to show "Connected"
+        status_bar.pack(side='bottom', fill='x')
 
         # Bind key release events to schedule document updates to the server
         text_widget.bind("<KeyRelease>", lambda event: on_key_release(event, client, text_widget))
+        
+        # Update line numbers
+        text_widget.bind("<KeyRelease>", lambda event: add_line_numbers(text_widget, line_numbers))
 
         # Start a thread to receive the document from the server
-        receive_thread = threading.Thread(target=update_document_from_server, args=(text_widget, client))
+        receive_thread = threading.Thread(target=update_document_from_server, args=(text_widget, client, status_bar))
         receive_thread.start()
 
         root.mainloop()
