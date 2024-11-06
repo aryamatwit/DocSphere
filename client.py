@@ -18,7 +18,6 @@ def update_document_from_server(text_widget, client_socket, status_bar):
             # Receive the document update from the server
             server_message = client_socket.recv(4096).decode('utf-8')
             if server_message:
-                # Merge the server update into the local document
                 merge_document(text_widget, server_message)
                 status_bar.config(text=f"Connected with server: {HOST}")
         except Exception as e:

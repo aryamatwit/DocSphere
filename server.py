@@ -1,6 +1,5 @@
 import socket
 import threading
-import sys
 import os
 
 HOST = ''
@@ -49,8 +48,8 @@ def handle_client(client_socket, address):
             document = client_message
             save_document()
 
-            # Broadcast the updated document to all clients
-            broadcast_document()
+            # Broadcast the updated document to all clients except the sender
+            broadcast_document(client_socket)
 
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
@@ -68,16 +67,17 @@ def send_document(client_socket):
     with clients_lock:
         client_socket.sendall(document.encode())
 
-# Function to broadcast the current document to all clients
-def broadcast_document():
+# Function to broadcast the current document to all clients except the sender
+def broadcast_document(sender_socket):
     with clients_lock:
         for client in connected_clients:
-            try:
-                client.sendall(document.encode())
-            except Exception:
-                print(f"Failed to send document to a client. Removing client.")
-                client.close()
-                connected_clients.remove(client)
+            if client != sender_socket:
+                try:
+                    client.sendall(document.encode())
+                except Exception:
+                    print(f"Failed to send document to a client. Removing client.")
+                    client.close()
+                    connected_clients.remove(client)
 
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
