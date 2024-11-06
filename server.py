@@ -1,6 +1,7 @@
 import socket
 import threading
 import sys
+import os
 
 HOST = ''
 PORT = 9999
@@ -8,6 +9,19 @@ PORT = 9999
 connected_clients = []
 clients_lock = threading.Lock()
 document = ""  # Shared document state
+document_file = "shared_document.txt"
+
+# Load the document from a file if it exists
+def load_document():
+    global document
+    if os.path.exists(document_file):
+        with open(document_file, "r") as file:
+            document = file.read()
+
+# Save the current document to a file
+def save_document():
+    with open(document_file, "w") as file:
+        file.write(document)
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
@@ -31,8 +45,9 @@ def handle_client(client_socket, address):
 
             print(f"Received updated document from client {address[0]}")
 
-            # Update the shared document with what the client sent
+            # Update the shared document and save it to the file
             document = client_message
+            save_document()
 
             # Broadcast the updated document to all clients
             broadcast_document()
@@ -67,6 +82,9 @@ def broadcast_document():
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 print('Socket created!')
+
+# Load the document when the server starts
+load_document()
 
 try:
     server_socket.bind((HOST, PORT))

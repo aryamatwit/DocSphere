@@ -2,12 +2,13 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import ttk
+from tkinter import filedialog
 
 HOST = '10.220.44.200'  
 PORT = 9999
 
 local_document = ""  # The local document content
-update_delay = 500  # Delay in milliseconds
+update_delay = 100  # Delay in milliseconds
 
 # Function to update the document received from the server
 def update_document_from_server(text_widget, client_socket, status_bar):
@@ -28,16 +29,13 @@ def update_document_from_server(text_widget, client_socket, status_bar):
 # Function to merge server updates with the local document
 def merge_document(text_widget, server_update):
     global local_document
-    # Save the current cursor position
     cursor_position = text_widget.index(tk.INSERT)
 
-    # Update the local document and text widget with the server update
     if server_update != local_document:
         local_document = server_update
         text_widget.delete(1.0, tk.END)
         text_widget.insert(tk.END, local_document)
 
-        # Restore the cursor position
         text_widget.mark_set(tk.INSERT, cursor_position)
 
 # Function to send only the changed portion of the document to the server
@@ -45,19 +43,25 @@ def send_partial_update(client_socket, text_widget):
     global local_document
     current_content = text_widget.get(1.0, tk.END).strip()
     
-    # Calculate the difference and send only the changes
     if current_content != local_document:
         client_socket.sendall(current_content.encode())
         local_document = current_content
 
 # Function to detect keypresses and schedule updates to the server
 def on_key_release(event, client_socket, text_widget):
-    # Cancel any scheduled update
     if hasattr(on_key_release, "after_id"):
         text_widget.after_cancel(on_key_release.after_id)
 
-    # Schedule a new update
     on_key_release.after_id = text_widget.after(update_delay, send_partial_update, client_socket, text_widget)
+
+# Function to save the document locally
+def save_document(text_widget):
+    current_content = text_widget.get(1.0, tk.END).strip()
+    save_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+    if save_path:
+        with open(save_path, "w") as file:
+            file.write(current_content)
+        print(f"Document saved to {save_path}")
 
 # Adds line numbers to the text widget
 def add_line_numbers(text_widget, line_number_widget):
@@ -94,8 +98,15 @@ def start_client():
         text_widget.config(yscrollcommand=y_scroll.set)
 
         # Status bar to show connection status
-        status_bar = tk.Label(root, text=f"Connected with server: {HOST}", bd=1, relief='sunken', anchor='w')  # Updated to show "Connected"
+        status_bar = tk.Label(root, text=f"Connected with server: {HOST}", bd=1, relief='sunken', anchor='w')
         status_bar.pack(side='bottom', fill='x')
+
+        # Menu for save functionality
+        menu_bar = tk.Menu(root)
+        file_menu = tk.Menu(menu_bar, tearoff=0)
+        file_menu.add_command(label="Save File", command=lambda: save_document(text_widget))
+        menu_bar.add_cascade(label="File", menu=file_menu)
+        root.config(menu=menu_bar)
 
         # Bind key release events to schedule document updates to the server
         text_widget.bind("<KeyRelease>", lambda event: on_key_release(event, client, text_widget))
