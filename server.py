@@ -8,7 +8,6 @@ PORT = 9999
 connected_clients = []
 clients_lock = threading.Lock()
 document = ""  # Shared document state
-line_locks = {}  # Dictionary to track line locks {line_number: client_socket}
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
@@ -24,35 +23,28 @@ def handle_client(client_socket, address):
 
     while True:
         try:
-            # Receive the document data and line number from the client
+            # Receive the document data from the client (full or partial)
             client_message = client_socket.recv(4096).decode('utf-8')
             if not client_message:
                 print(f"Client {address[0]} disconnected.")
                 break
 
-            # Parse the received data
-            line_number, new_content = client_message.split(":::", 1)
-            line_number = int(line_number)
+            print(f"Received updated document from client {address[0]}")
 
-            # Check if the line is locked by this client or is not locked
-            with clients_lock:
-                if line_locks.get(line_number) in (None, client_socket):
-                    line_locks[line_number] = client_socket  # Lock line for this client
-                    update_document_line(line_number, new_content)  # Update the document
-                    broadcast_document()  # Broadcast updated document to all clients
-                else:
-                    # If the line is locked by another client, send a "locked" message back
-                    client_socket.sendall(f"LOCKED::{line_number}".encode())
+            # Update the shared document with what the client sent
+            document = client_message
+
+            # Broadcast the updated document to all clients
+            broadcast_document()
 
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
             break
 
-    # Remove the client and release any locks they held
+    # Remove the client from the connected clients list on disconnection
     with clients_lock:
         if client_socket in connected_clients:
             connected_clients.remove(client_socket)
-        release_client_locks(client_socket)
     client_socket.close()
     print(f"Connection with {address[0]} closed.")
 
@@ -60,22 +52,6 @@ def handle_client(client_socket, address):
 def send_document(client_socket):
     with clients_lock:
         client_socket.sendall(document.encode())
-
-# Function to update a specific line in the shared document
-def update_document_line(line_number, new_content):
-    global document
-    doc_lines = document.splitlines()
-    if line_number < len(doc_lines):
-        doc_lines[line_number] = new_content
-    else:
-        # Extend document if line_number is beyond current document length
-        doc_lines += [""] * (line_number - len(doc_lines)) + [new_content]
-    document = "\n".join(doc_lines)
-
-# Function to release all locks held by a client
-def release_client_locks(client_socket):
-    global line_locks
-    line_locks = {line: owner for line, owner in line_locks.items() if owner != client_socket}
 
 # Function to broadcast the current document to all clients
 def broadcast_document():
