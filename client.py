@@ -7,8 +7,7 @@ HOST = '10.220.44.200'
 PORT = 9999
 
 local_document = ""  # The local document content
-locked_lines = set()  # Set of lines locked by other clients
-update_delay = 500  # Delay in milliseconds
+update_delay = 100  # Delay in milliseconds
 
 # Function to update the document received from the server
 def update_document_from_server(text_widget, client_socket, line_numbers):
@@ -16,31 +15,11 @@ def update_document_from_server(text_widget, client_socket, line_numbers):
     while True:
         try:
             server_message = client_socket.recv(4096).decode('utf-8')
-            if server_message.startswith("LINE_LOCK:"):
-                process_line_lock(server_message, text_widget)
-            else:
+            if server_message:
                 merge_document(text_widget, server_message, line_numbers)
         except Exception as e:
             print(f"[ERROR] Lost connection to the server: {e}")
             break
-
-# Process line lock/unlock messages from the server
-def process_line_lock(message, text_widget):
-    _, line, status = message.split(":")
-    line = int(line)
-    if status == "LOCKED":
-        locked_lines.add(line)
-        highlight_locked_line(text_widget, line, lock=True)
-    elif status == "UNLOCKED":
-        locked_lines.discard(line)
-        highlight_locked_line(text_widget, line, lock=False)
-
-# Highlight or unhighlight a line to indicate lock status
-def highlight_locked_line(text_widget, line, lock=True):
-    text_widget.tag_remove("locked_line", f"{line}.0", f"{line}.end")
-    if lock:
-        text_widget.tag_add("locked_line", f"{line}.0", f"{line}.end")
-        text_widget.tag_configure("locked_line", background="lightgrey")
 
 # Function to merge server updates with the local document
 def merge_document(text_widget, server_update, line_numbers):
@@ -53,36 +32,6 @@ def merge_document(text_widget, server_update, line_numbers):
         update_line_numbers(text_widget, line_numbers)
         text_widget.mark_set(tk.INSERT, cursor_position)
 
-# Function to send a lock or unlock request to the server
-def request_line_lock(client_socket, line, lock):
-    message = f"{'LOCK' if lock else 'UNLOCK'}:{line}"
-    client_socket.sendall(message.encode())
-
-# Function to detect keypresses and schedule updates
-def on_key_release(event, client_socket, text_widget, line_numbers):
-    line = int(text_widget.index("insert").split(".")[0])
-
-    # Check if line is locked and prevent editing
-    if line in locked_lines:
-        return "break"  # Prevent editing on locked line
-
-    # Request line lock if the line is not already locked
-    if line not in locked_lines:
-        request_line_lock(client_socket, line, True)
-
-    # Detect line changes and unlock previous line
-    if hasattr(on_key_release, "current_line") and on_key_release.current_line != line:
-        request_line_lock(client_socket, on_key_release.current_line, False)
-
-    on_key_release.current_line = line  # Update current line
-
-    # Send document updates as usual
-    if hasattr(on_key_release, "after_id"):
-        text_widget.after_cancel(on_key_release.after_id)
-    on_key_release.after_id = text_widget.after(update_delay, send_partial_update, client_socket, text_widget)
-
-    update_line_numbers(text_widget, line_numbers)
-
 # Function to send only the changed portion of the document to the server
 def send_partial_update(client_socket, text_widget):
     global local_document
@@ -90,6 +39,13 @@ def send_partial_update(client_socket, text_widget):
     if current_content != local_document:
         client_socket.sendall(current_content.encode())
         local_document = current_content
+
+# Function to detect keypresses and schedule updates to the server
+def on_key_release(event, client_socket, text_widget, line_numbers):
+    if hasattr(on_key_release, "after_id"):
+        text_widget.after_cancel(on_key_release.after_id)
+    on_key_release.after_id = text_widget.after(update_delay, send_partial_update, client_socket, text_widget)
+    update_line_numbers(text_widget, line_numbers)
 
 # Function to update line numbers
 def update_line_numbers(text_widget, line_numbers):
@@ -104,6 +60,19 @@ def on_closing(root, client_socket):
     client_socket.close()  # Close the client socket
     root.destroy()  # Close the GUI window
 
+# Function to save the current document to a local file
+def save_document(text_widget):
+    # Open a file dialog to select the file location
+    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+    if file_path:
+        try:
+            with open(file_path, "w") as file:
+                # Write the current document content to the file
+                file.write(text_widget.get(1.0, tk.END).strip())
+            print(f"Document saved successfully to {file_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to save the document: {e}")
+
 # Start the client-side program
 def start_client():
     try:
@@ -115,7 +84,16 @@ def start_client():
 
         # Call on_closing() when the window is closed
         root.protocol("WM_DELETE_WINDOW", lambda: on_closing(root, client))
-        
+
+        # Create a menu bar
+        menu_bar = tk.Menu(root)
+        root.config(menu=menu_bar)
+
+        # Add a "File" menu with a "Save" option
+        file_menu = tk.Menu(menu_bar, tearoff=0)
+        file_menu.add_command(label="Save", command=lambda: save_document(text_widget))
+        menu_bar.add_cascade(label="File", menu=file_menu)
+
         # Create a frame for line numbers and text widget
         main_frame = tk.Frame(root)
         main_frame.pack(fill='both', expand=True)
@@ -127,9 +105,6 @@ def start_client():
         # Text widget for document editing
         text_widget = tk.Text(main_frame, wrap='none', font=('Mono', 12), undo=True, border=0, foreground="#f8f8f2", background="#282a36")
         text_widget.pack(side='right', fill='both', expand=True)
-
-        # Apply tag for locked line highlighting
-        text_widget.tag_configure("locked_line", background="lightgrey")
 
         # Scrollbar
         scrollbar = ttk.Scrollbar(text_widget, command=text_widget.yview)
