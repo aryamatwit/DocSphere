@@ -78,6 +78,10 @@ def handle_client(client_socket, address):
 
             # Broadcast the updated document to all clients
             broadcast_document()
+        elif message['type'] == 'CHAT':
+            chat_message = message['content']
+            print(f"Received chat message from {username}: {chat_message}")
+            broadcast_chat(username, chat_message)
         else:
             print(f"Unknown message type from {address[0]}: {message['type']}")
 
@@ -138,6 +142,18 @@ def broadcast_user_list():
                 client['socket'].sendall(message.encode('utf-8'))
             except Exception:
                 print(f"Failed to send user list to {client['username']}. Removing client.")
+                client['socket'].close()
+                connected_clients.remove(client)
+
+# Function to broadcast chat messages to all clients
+def broadcast_chat(username, chat_message):
+    with clients_lock:
+        message = json.dumps({'type': 'CHAT', 'username': username, 'content': chat_message}) + '\n'
+        for client in connected_clients:
+            try:
+                client['socket'].sendall(message.encode('utf-8'))
+            except Exception:
+                print(f"Failed to send chat message to {client['username']}. Removing client.")
                 client['socket'].close()
                 connected_clients.remove(client)
 

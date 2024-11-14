@@ -8,15 +8,17 @@ HOST = '10.220.43.80'
 PORT = 9999
 
 local_document = ""  # The local document content
-update_delay = 100  # Delay in milliseconds
+update_delay = 10  # Delay in milliseconds
 
 # Function to update the document received from the server
-def update_document_from_server(text_widget, client_socket, user_list_widget):
+def update_document_from_server(text_widget, client_socket, user_list_widget, chat_display_widget):
     for message in receive_messages(client_socket):
         if message['type'] == 'DOCUMENT':
             merge_document(text_widget, message['content'])
         elif message['type'] == 'USERLIST':
             update_user_list(user_list_widget, message['users'])
+        elif message['type'] == 'CHAT':
+            update_chat_display(chat_display_widget, message['username'], message['content'])
 
 # Function to receive messages from the server
 def receive_messages(sock):
@@ -87,8 +89,24 @@ def update_user_list(user_list_widget, users):
     user_list_widget.insert(tk.END, "Connected Users: " + ", ".join(users))
     user_list_widget.config(state='disabled')
 
+# Function to update the chat display
+def update_chat_display(chat_display_widget, username, message):
+    chat_display_widget.config(state='normal')
+    chat_display_widget.insert(tk.END, f"{username}: {message}\n")
+    chat_display_widget.see(tk.END)
+    chat_display_widget.config(state='disabled')
+
+# Function to send a chat message
+def send_chat_message(event=None):
+    message = chat_entry.get().strip()
+    if message:
+        msg = json.dumps({'type': 'CHAT', 'content': message}) + '\n'
+        client.sendall(msg.encode('utf-8'))
+        chat_entry.delete(0, tk.END)
+
 # Start the client-side program
 def start_client(username):
+    global client, chat_entry
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((HOST, PORT))
@@ -121,13 +139,17 @@ def start_client(username):
                                    state='disabled', borderwidth=0, bg='gray', fg='white')
         user_list_widget.pack(side='top', fill='x')
 
+        # Create the main frame
+        main_frame = tk.Frame(root, bg='gray')
+        main_frame.pack(fill='both', expand=True)
+
         # Create a canvas to hold the A4 size page
-        canvas = tk.Canvas(root, bg='gray')
+        canvas = tk.Canvas(main_frame, bg='gray')
         canvas.pack(side='left', fill='both', expand=True)
 
         # Add vertical scrollbar to the canvas
-        scrollbar = ttk.Scrollbar(root, orient='vertical', command=canvas.yview)
-        scrollbar.pack(side='right', fill='y')
+        scrollbar = ttk.Scrollbar(main_frame, orient='vertical', command=canvas.yview)
+        scrollbar.pack(side='left', fill='y')
         canvas.configure(yscrollcommand=scrollbar.set)
 
         # Create a frame inside the canvas to represent the A4 page with margins
@@ -160,12 +182,37 @@ def start_client(username):
 
         page_frame.bind('<Configure>', update_scroll_region)
 
+        # Create the chat panel on the right
+        chat_frame = tk.Frame(main_frame, bg='lightgray', bd=1, relief='sunken')
+        chat_frame.pack(side='right', fill='y')
+
+        # Create a button to minimize/maximize the chat panel
+        def toggle_chat():
+            if chat_frame.winfo_viewable():
+                chat_frame.pack_forget()
+                toggle_button.config(text='Show Chat')
+            else:
+                chat_frame.pack(side='right', fill='y')
+                toggle_button.config(text='Hide Chat')
+
+        toggle_button = tk.Button(root, text='Hide Chat', command=toggle_chat)
+        toggle_button.place(relx=1.0, rely=0.0, anchor='ne')
+
+        # Chat display widget
+        chat_display_widget = tk.Text(chat_frame, wrap='word', state='disabled', width=30, bg='white')
+        chat_display_widget.pack(side='top', fill='both', expand=True)
+
+        # Chat entry widget
+        chat_entry = tk.Entry(chat_frame)
+        chat_entry.pack(side='bottom', fill='x')
+        chat_entry.bind('<Return>', send_chat_message)
+
         # Bind key release events to schedule document updates to the server
         text_widget.bind("<KeyRelease>", lambda event: on_key_release(event, client, text_widget))
 
-        # Start a thread to receive the document from the server
+        # Start a thread to receive messages from the server
         receive_thread = threading.Thread(target=update_document_from_server,
-                                          args=(text_widget, client, user_list_widget))
+                                          args=(text_widget, client, user_list_widget, chat_display_widget))
         receive_thread.daemon = True
         receive_thread.start()
 
