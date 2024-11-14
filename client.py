@@ -2,58 +2,64 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
+import json
 
-HOST = '10.220.44.200'  
+HOST = '10.220.43.80'
 PORT = 9999
 
 local_document = ""  # The local document content
 update_delay = 100  # Delay in milliseconds
 
 # Function to update the document received from the server
-def update_document_from_server(text_widget, client_socket, line_numbers):
-    global local_document
+def update_document_from_server(text_widget, client_socket, user_list_widget):
+    for message in receive_messages(client_socket):
+        if message['type'] == 'DOCUMENT':
+            merge_document(text_widget, message['content'])
+        elif message['type'] == 'USERLIST':
+            update_user_list(user_list_widget, message['users'])
+
+# Function to receive messages from the server
+def receive_messages(sock):
+    buffer = ''
     while True:
         try:
-            server_message = client_socket.recv(4096).decode('utf-8')
-            if server_message:
-                merge_document(text_widget, server_message, line_numbers)
+            data = sock.recv(4096).decode('utf-8')
+            if not data:
+                # Connection closed
+                break
+            buffer += data
+            while '\n' in buffer:
+                line, buffer = buffer.split('\n', 1)
+                message = json.loads(line)
+                yield message
         except Exception as e:
             print(f"[ERROR] Lost connection to the server: {e}")
             break
 
 # Function to merge server updates with the local document
-def merge_document(text_widget, server_update, line_numbers):
+def merge_document(text_widget, server_update):
     global local_document
     cursor_position = text_widget.index(tk.INSERT)
     if server_update != local_document:
         local_document = server_update
         text_widget.delete(1.0, tk.END)
         text_widget.insert(tk.END, local_document)
-        update_line_numbers(text_widget, line_numbers)
         text_widget.mark_set(tk.INSERT, cursor_position)
 
-# Function to send only the changed portion of the document to the server
+# Function to send the updated document to the server
 def send_partial_update(client_socket, text_widget):
     global local_document
     current_content = text_widget.get(1.0, tk.END).strip()
     if current_content != local_document:
-        client_socket.sendall(current_content.encode())
+        msg = json.dumps({'type': 'DOCUMENT', 'content': current_content}) + '\n'
+        client_socket.sendall(msg.encode('utf-8'))
         local_document = current_content
 
 # Function to detect keypresses and schedule updates to the server
-def on_key_release(event, client_socket, text_widget, line_numbers):
+def on_key_release(event, client_socket, text_widget):
     if hasattr(on_key_release, "after_id"):
         text_widget.after_cancel(on_key_release.after_id)
     on_key_release.after_id = text_widget.after(update_delay, send_partial_update, client_socket, text_widget)
-    update_line_numbers(text_widget, line_numbers)
-
-# Function to update line numbers
-def update_line_numbers(text_widget, line_numbers):
-    line_numbers_text = "\n".join(str(i + 1) for i in range(int(text_widget.index('end-1c').split('.')[0])))
-    line_numbers.config(state='normal')
-    line_numbers.delete(1.0, tk.END)
-    line_numbers.insert(tk.END, line_numbers_text)
-    line_numbers.config(state='disabled')
 
 # Function to handle closing the window and disconnecting from the server
 def on_closing(root, client_socket):
@@ -63,7 +69,8 @@ def on_closing(root, client_socket):
 # Function to save the current document to a local file
 def save_document(text_widget):
     # Open a file dialog to select the file location
-    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+    file_path = filedialog.asksaveasfilename(defaultextension=".txt",
+                                             filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
     if file_path:
         try:
             with open(file_path, "w") as file:
@@ -73,14 +80,29 @@ def save_document(text_widget):
         except Exception as e:
             print(f"[ERROR] Failed to save the document: {e}")
 
+# Function to update the user list in the GUI
+def update_user_list(user_list_widget, users):
+    user_list_widget.config(state='normal')
+    user_list_widget.delete(1.0, tk.END)
+    user_list_widget.insert(tk.END, "Connected Users: " + ", ".join(users))
+    user_list_widget.config(state='disabled')
+
 # Start the client-side program
-def start_client():
+def start_client(username):
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((HOST, PORT))
 
+        # Send the username to the server
+        msg = json.dumps({'type': 'USERNAME', 'username': username}) + '\n'
+        client.sendall(msg.encode('utf-8'))
+
         root = tk.Tk()
-        root.title("DevSphere")
+        root.title("Collaborative Document Editor")
+        root.configure(bg='gray')
+
+        # Make the window full screen
+        root.state('zoomed')
 
         # Call on_closing() when the window is closed
         root.protocol("WM_DELETE_WINDOW", lambda: on_closing(root, client))
@@ -94,28 +116,56 @@ def start_client():
         file_menu.add_command(label="Save", command=lambda: save_document(text_widget))
         menu_bar.add_cascade(label="File", menu=file_menu)
 
-        # Create a frame for line numbers and text widget
-        main_frame = tk.Frame(root)
-        main_frame.pack(fill='both', expand=True)
+        # Create a frame for the user list at the top
+        user_list_widget = tk.Text(root, height=1, wrap='none', font=('Arial', 10),
+                                   state='disabled', borderwidth=0, bg='gray', fg='white')
+        user_list_widget.pack(side='top', fill='x')
 
-        # Line numbers widget
-        line_numbers = tk.Text(main_frame, width=4, padx=3, takefocus=0, border=0, background='lightgrey', state='disabled')
-        line_numbers.pack(side='left', fill='y')
+        # Create a canvas to hold the A4 size page
+        canvas = tk.Canvas(root, bg='gray')
+        canvas.pack(side='left', fill='both', expand=True)
 
-        # Text widget for document editing
-        text_widget = tk.Text(main_frame, wrap='none', font=('Mono', 12), undo=True, border=0, foreground="#f8f8f2", background="#282a36")
-        text_widget.pack(side='right', fill='both', expand=True)
-
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(text_widget, command=text_widget.yview)
+        # Add vertical scrollbar to the canvas
+        scrollbar = ttk.Scrollbar(root, orient='vertical', command=canvas.yview)
         scrollbar.pack(side='right', fill='y')
-        text_widget['yscrollcommand'] = scrollbar.set
+        canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Bind key release events to update the line numbers and schedule document updates to the server
-        text_widget.bind("<KeyRelease>", lambda event: on_key_release(event, client, text_widget, line_numbers))
+        # Create a frame inside the canvas to represent the A4 page with margins
+        page_width = 794  # A4 width in pixels at 96 DPI
+        page_height = 1123  # A4 height in pixels at 96 DPI
+        margin = 50  # Margin size in pixels
+
+        # Center the page in the canvas
+        def center_page(event=None):
+            canvas_width = canvas.winfo_width()
+            x = (canvas_width - page_width) // 2
+            if x < 0:
+                x = 0
+            canvas.coords(page_window, x, 0)
+
+        page_frame = tk.Frame(canvas, width=page_width, height=page_height, bg='white')
+        page_window = canvas.create_window(0, 0, window=page_frame, anchor='nw')
+
+        # Bind the canvas size change to center the page
+        canvas.bind('<Configure>', center_page)
+
+        # Add the text widget inside the page frame with margins
+        text_widget = tk.Text(page_frame, wrap='word', font=('Arial', 12), undo=True,
+                              bg='white', borderwidth=0)
+        text_widget.place(x=margin, y=margin, width=page_width - 2 * margin, height=page_height - 2 * margin)
+
+        # Update scroll region
+        def update_scroll_region(event=None):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+
+        page_frame.bind('<Configure>', update_scroll_region)
+
+        # Bind key release events to schedule document updates to the server
+        text_widget.bind("<KeyRelease>", lambda event: on_key_release(event, client, text_widget))
 
         # Start a thread to receive the document from the server
-        receive_thread = threading.Thread(target=update_document_from_server, args=(text_widget, client, line_numbers))
+        receive_thread = threading.Thread(target=update_document_from_server,
+                                          args=(text_widget, client, user_list_widget))
         receive_thread.daemon = True
         receive_thread.start()
 
@@ -124,6 +174,7 @@ def start_client():
     except socket.error as err:
         print(f"Failed to connect to the server: {err}")
 
-# Prompt the user to connect to the server
-if input("Would you like to connect to the server (yes/no)? ").lower() == 'yes':
-    start_client()
+# Prompt the user to connect to the server with a username
+username = input("Enter your username: ").strip()
+if username:
+    start_client(username)
