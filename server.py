@@ -1,7 +1,6 @@
 import socket
 import threading
 import sys
-import json
 
 HOST = ''
 PORT = 9999
@@ -9,47 +8,38 @@ PORT = 9999
 connected_clients = []
 clients_lock = threading.Lock()
 document = ""  # Shared document state
-operation_counter = 0  # Global operation counter
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
     global document
-    global operation_counter
     print(f'Connected with {address[0]}:{str(address[1])}')
     
     # Add the new client to the list of connected clients
     with clients_lock:
         connected_clients.append(client_socket)
-    
-    # Send the latest document to the new client
+
+    # Immediately send the latest document to the new client
     send_document(client_socket)
-    
+
     while True:
         try:
-            # Receive the operation data from the client
-            message = client_socket.recv(4096).decode('utf-8')
-            if not message:
+            # Receive the document data from the client (full or partial)
+            client_message = client_socket.recv(4096).decode('utf-8')
+            if not client_message:
                 print(f"Client {address[0]} disconnected.")
                 break
 
-            operation = json.loads(message)
-            print(f"Received operation from client {address[0]}: {operation}")
+            print(f"Received updated document from client {address[0]}")
 
-            # Apply the operation to the shared document
-            with threading.Lock():
-                apply_operation(operation)
-                operation_counter += 1  # Increment the operation counter
-                operation['operation_id'] = operation_counter  # Add operation ID
+            # Update the shared document with what the client sent
+            document = client_message
 
-            # Broadcast the operation to all clients
-            broadcast_operation(operation)
+            # Broadcast the updated document to all clients
+            broadcast_document()
 
         except socket.error as msg:
             print(f"Communication error with client {address[0]}: {str(msg)}")
             break
-        except json.JSONDecodeError:
-            print(f"Received invalid JSON from client {address[0]}")
-            continue
 
     # Remove the client from the connected clients list on disconnection
     with clients_lock:
@@ -61,39 +51,18 @@ def handle_client(client_socket, address):
 # Function to send the current document to a specific client
 def send_document(client_socket):
     with clients_lock:
-        message = {
-            'type': 'full_document',
-            'content': document
-        }
-        client_socket.sendall(json.dumps(message).encode())
+        client_socket.sendall(document.encode())
 
-# Function to broadcast an operation to all clients
-def broadcast_operation(operation):
+# Function to broadcast the current document to all clients
+def broadcast_document():
     with clients_lock:
-        clients_to_remove = []
         for client in connected_clients:
             try:
-                client.sendall(json.dumps(operation).encode())
+                client.sendall(document.encode())
             except Exception:
-                print(f"Failed to send operation to a client. Removing client.")
+                print(f"Failed to send document to a client. Removing client.")
                 client.close()
-                clients_to_remove.append(client)
-        for client in clients_to_remove:
-            connected_clients.remove(client)
-
-# Function to apply an operation to the shared document
-def apply_operation(operation):
-    global document
-    op_type = operation.get('type')
-    index = operation.get('index')
-    text = operation.get('text', '')
-    if op_type == 'insert':
-        document = document[:index] + text + document[index:]
-    elif op_type == 'delete':
-        length = operation.get('length', 1)
-        document = document[:index] + document[index+length:]
-    else:
-        print(f"Unknown operation type: {op_type}")
+                connected_clients.remove(client)
 
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
