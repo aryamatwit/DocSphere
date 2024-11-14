@@ -9,10 +9,11 @@ PORT = 9999
 connected_clients = []
 clients_lock = threading.Lock()
 document = ""  # Shared document state
+chat_history = []  # List to store chat history
 
 # Function to handle communication with a single client
 def handle_client(client_socket, address):
-    global document
+    global document, chat_history
     print(f'Connected with {address[0]}:{str(address[1])}')
 
     # Initialize buffer for this client
@@ -57,8 +58,9 @@ def handle_client(client_socket, address):
     with clients_lock:
         connected_clients.append({'socket': client_socket, 'username': username})
 
-    # Send the latest document to the new client
+    # Send the latest document and chat history to the new client
     send_document(client_socket)
+    send_chat_history(client_socket)
     # Send the updated user list to all clients
     broadcast_user_list()
 
@@ -81,6 +83,9 @@ def handle_client(client_socket, address):
         elif message['type'] == 'CHAT':
             chat_message = message['content']
             print(f"Received chat message from {username}: {chat_message}")
+            # Save chat message to history
+            with threading.Lock():
+                chat_history.append({'username': username, 'content': chat_message})
             broadcast_chat(username, chat_message)
         else:
             print(f"Unknown message type from {address[0]}: {message['type']}")
@@ -120,11 +125,17 @@ def send_document(client_socket):
         message = json.dumps({'type': 'DOCUMENT', 'content': document}) + '\n'
         client_socket.sendall(message.encode('utf-8'))
 
+# Function to send the chat history to a specific client
+def send_chat_history(client_socket):
+    with clients_lock:
+        message = json.dumps({'type': 'CHAT_HISTORY', 'history': chat_history}) + '\n'
+        client_socket.sendall(message.encode('utf-8'))
+
 # Function to broadcast the current document to all clients
 def broadcast_document():
     with clients_lock:
         message = json.dumps({'type': 'DOCUMENT', 'content': document}) + '\n'
-        for client in connected_clients:
+        for client in connected_clients.copy():
             try:
                 client['socket'].sendall(message.encode('utf-8'))
             except Exception:
@@ -137,7 +148,7 @@ def broadcast_user_list():
     with clients_lock:
         usernames = [client['username'] for client in connected_clients]
         message = json.dumps({'type': 'USERLIST', 'users': usernames}) + '\n'
-        for client in connected_clients:
+        for client in connected_clients.copy():
             try:
                 client['socket'].sendall(message.encode('utf-8'))
             except Exception:
@@ -149,7 +160,7 @@ def broadcast_user_list():
 def broadcast_chat(username, chat_message):
     with clients_lock:
         message = json.dumps({'type': 'CHAT', 'username': username, 'content': chat_message}) + '\n'
-        for client in connected_clients:
+        for client in connected_clients.copy():
             try:
                 client['socket'].sendall(message.encode('utf-8'))
             except Exception:

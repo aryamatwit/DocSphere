@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 import json
 
-HOST = '10.220.43.80'
+HOST = '10.220.52.194'
 PORT = 9999
 
 local_document = ""  # The local document content
@@ -19,6 +19,8 @@ def update_document_from_server(text_widget, client_socket, user_list_widget, ch
             update_user_list(user_list_widget, message['users'])
         elif message['type'] == 'CHAT':
             update_chat_display(chat_display_widget, message['username'], message['content'])
+        elif message['type'] == 'CHAT_HISTORY':
+            load_chat_history(chat_display_widget, message['history'])
 
 # Function to receive messages from the server
 def receive_messages(sock):
@@ -93,6 +95,15 @@ def update_user_list(user_list_widget, users):
 def update_chat_display(chat_display_widget, username, message):
     chat_display_widget.config(state='normal')
     chat_display_widget.insert(tk.END, f"{username}: {message}\n")
+    chat_display_widget.see(tk.END)
+    chat_display_widget.config(state='disabled')
+
+# Function to load chat history
+def load_chat_history(chat_display_widget, history):
+    chat_display_widget.config(state='normal')
+    chat_display_widget.delete(1.0, tk.END)
+    for msg in history:
+        chat_display_widget.insert(tk.END, f"{msg['username']}: {msg['content']}\n")
     chat_display_widget.see(tk.END)
     chat_display_widget.config(state='disabled')
 
