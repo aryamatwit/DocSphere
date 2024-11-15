@@ -4,16 +4,17 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 import json
 
-HOST = '10.220.52.194'
+HOST = '10.220.52.194'  # Replace with your server's IP address
 PORT = 9999
 
 local_document = ""  # The local document content
-update_delay = 10  # Delay in milliseconds
 
 # Function to update the document received from the server
 def update_document_from_server(text_widget, client_socket, user_list_widget, chat_display_widget):
     for message in receive_messages(client_socket):
-        if message['type'] == 'DOCUMENT':
+        if message['type'] == 'OPERATION':
+            apply_operation(text_widget, message)
+        elif message['type'] == 'DOCUMENT':
             merge_document(text_widget, message['content'])
         elif message['type'] == 'USERLIST':
             update_user_list(user_list_widget, message['users'])
@@ -40,30 +41,60 @@ def receive_messages(sock):
             print(f"[ERROR] Lost connection to the server: {e}")
             break
 
-# Function to merge server updates with the local document
+# Function to apply operations received from the server
+def apply_operation(text_widget, message):
+    operation = message['operation']
+    if operation == 'insert':
+        index = message['index']
+        text = message['text']
+        text_widget.insert(index, text)
+    elif operation == 'delete':
+        index_start = message['index_start']
+        index_end = message['index_end']
+        text_widget.delete(index_start, index_end)
+
+# Function to merge server document with local document
 def merge_document(text_widget, server_update):
     global local_document
-    cursor_position = text_widget.index(tk.INSERT)
     if server_update != local_document:
         local_document = server_update
         text_widget.delete(1.0, tk.END)
         text_widget.insert(tk.END, local_document)
-        text_widget.mark_set(tk.INSERT, cursor_position)
 
-# Function to send the updated document to the server
-def send_partial_update(client_socket, text_widget):
-    global local_document
-    current_content = text_widget.get(1.0, tk.END).strip()
-    if current_content != local_document:
-        msg = json.dumps({'type': 'DOCUMENT', 'content': current_content}) + '\n'
-        client_socket.sendall(msg.encode('utf-8'))
-        local_document = current_content
+# Function to handle text insert events
+def on_text_insert(index, text, client_socket):
+    # Send an insert operation to the server
+    msg = json.dumps({'type': 'OPERATION', 'operation': 'insert', 'index': index, 'text': text}) + '\n'
+    client_socket.sendall(msg.encode('utf-8'))
 
-# Function to detect keypresses and schedule updates to the server
-def on_key_release(event, client_socket, text_widget):
-    if hasattr(on_key_release, "after_id"):
-        text_widget.after_cancel(on_key_release.after_id)
-    on_key_release.after_id = text_widget.after(update_delay, send_partial_update, client_socket, text_widget)
+# Function to handle text delete events
+def on_text_delete(index_start, index_end, client_socket):
+    # Send a delete operation to the server
+    msg = json.dumps({'type': 'OPERATION', 'operation': 'delete', 'index_start': index_start, 'index_end': index_end}) + '\n'
+    client_socket.sendall(msg.encode('utf-8'))
+
+# Function to detect keypresses and send operations to the server
+def setup_text_widget_events(text_widget, client_socket):
+    # Track insertions
+    def on_key_press(event):
+        index = text_widget.index(tk.INSERT)
+        char = event.char
+        if char:
+            on_text_insert(index, char, client_socket)
+            text_widget.insert(index, char)
+        return "break"  # Prevent default behavior to avoid duplicate inserts
+
+    # Track deletions
+    def on_key_delete(event):
+        if event.keysym == 'BackSpace':
+            index = text_widget.index(tk.INSERT)
+            prev_index = text_widget.index(f"{index} -1c")
+            on_text_delete(prev_index, index, client_socket)
+            text_widget.delete(prev_index, index)
+            return "break"
+
+    text_widget.bind("<KeyPress>", on_key_press)
+    text_widget.bind("<KeyPress-BackSpace>", on_key_delete)
 
 # Function to handle closing the window and disconnecting from the server
 def on_closing(root, client_socket):
@@ -218,8 +249,8 @@ def start_client(username):
         chat_entry.pack(side='bottom', fill='x')
         chat_entry.bind('<Return>', send_chat_message)
 
-        # Bind key release events to schedule document updates to the server
-        text_widget.bind("<KeyRelease>", lambda event: on_key_release(event, client, text_widget))
+        # Setup text widget events to send operations to the server
+        setup_text_widget_events(text_widget, client)
 
         # Start a thread to receive messages from the server
         receive_thread = threading.Thread(target=update_document_from_server,

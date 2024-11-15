@@ -44,6 +44,10 @@ def handle_client(client_socket, address):
                     username = message['username']
                     print(f"Username received from {address[0]}: {username}")
                     break
+                else:
+                    print(f"Expected USERNAME message from {address[0]}")
+                    client_socket.close()
+                    return
             else:
                 # Connection closed
                 print(f"Client {address[0]} disconnected before sending username.")
@@ -66,20 +70,11 @@ def handle_client(client_socket, address):
 
     # Now handle messages from client
     for message in receive_messages(client_socket):
-        if message['type'] == 'DOCUMENT':
-            client_message = message['content']
-            if client_message is None:
-                print(f"Client {address[0]} sent empty document.")
-                break
-
-            print(f"Received updated document from client {address[0]}")
-
-            # Update the shared document with what the client sent
-            with threading.Lock():
-                document = client_message
-
-            # Broadcast the updated document to all clients
-            broadcast_document()
+        if message['type'] == 'OPERATION':
+            # Update the shared document
+            apply_operation_to_document(message)
+            # Broadcast the operation to other clients
+            broadcast_operation(message, client_socket)
         elif message['type'] == 'CHAT':
             chat_message = message['content']
             print(f"Received chat message from {username}: {chat_message}")
@@ -131,18 +126,6 @@ def send_chat_history(client_socket):
         message = json.dumps({'type': 'CHAT_HISTORY', 'history': chat_history}) + '\n'
         client_socket.sendall(message.encode('utf-8'))
 
-# Function to broadcast the current document to all clients
-def broadcast_document():
-    with clients_lock:
-        message = json.dumps({'type': 'DOCUMENT', 'content': document}) + '\n'
-        for client in connected_clients.copy():
-            try:
-                client['socket'].sendall(message.encode('utf-8'))
-            except Exception:
-                print(f"Failed to send document to {client['username']}. Removing client.")
-                client['socket'].close()
-                connected_clients.remove(client)
-
 # Function to broadcast the user list to all clients
 def broadcast_user_list():
     with clients_lock:
@@ -167,6 +150,46 @@ def broadcast_chat(username, chat_message):
                 print(f"Failed to send chat message to {client['username']}. Removing client.")
                 client['socket'].close()
                 connected_clients.remove(client)
+
+# Function to apply operation to the shared document
+def apply_operation_to_document(message):
+    global document
+    operation = message['operation']
+    if operation == 'insert':
+        index = message['index']
+        text = message['text']
+        # Convert index to integer offset
+        offset = text_index_to_offset(index)
+        with threading.Lock():
+            document = document[:offset] + text + document[offset:]
+    elif operation == 'delete':
+        index_start = message['index_start']
+        index_end = message['index_end']
+        offset_start = text_index_to_offset(index_start)
+        offset_end = text_index_to_offset(index_end)
+        with threading.Lock():
+            document = document[:offset_start] + document[offset_end:]
+
+# Function to convert Tkinter text index to offset
+def text_index_to_offset(index):
+    # Index is in the form 'line.column'
+    line, column = map(int, index.split('.'))
+    lines = document.split('\n')
+    offset = sum(len(lines[i]) + 1 for i in range(line - 1)) + column
+    return offset
+
+# Function to broadcast operation to all clients except the source
+def broadcast_operation(message, source_socket):
+    with clients_lock:
+        for client in connected_clients.copy():
+            if client['socket'] != source_socket:
+                try:
+                    msg = json.dumps(message) + '\n'
+                    client['socket'].sendall(msg.encode('utf-8'))
+                except Exception:
+                    print(f"Failed to send operation to {client['username']}. Removing client.")
+                    client['socket'].close()
+                    connected_clients.remove(client)
 
 # Create a TCP socket
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
