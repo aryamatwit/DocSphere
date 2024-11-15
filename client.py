@@ -43,15 +43,37 @@ def receive_messages(sock):
 
 # Function to apply operations received from the server
 def apply_operation(text_widget, message):
+    # Save the current cursor position
+    current_cursor = text_widget.index(tk.INSERT)
+
+    # Apply the operation
     operation = message['operation']
     if operation == 'insert':
         index = message['index']
         text = message['text']
+
+        # Adjust cursor position if insertion is before the cursor
+        if text_widget.compare(index, '<=', current_cursor):
+            # Adjust the cursor position to account for the inserted text
+            current_cursor = text_widget.index(f"{current_cursor} + {len(text)}c")
+
         text_widget.insert(index, text)
     elif operation == 'delete':
         index_start = message['index_start']
         index_end = message['index_end']
+
+        # Check if deletion affects cursor position
+        if text_widget.compare(index_start, '<', current_cursor):
+            deleted_chars = text_widget.count(index_start, index_end, 'chars')[0]
+            current_cursor = text_widget.index(f"{current_cursor} - {deleted_chars}c")
+            # Ensure cursor doesn't move before the start of the text
+            if text_widget.compare(current_cursor, '<', '1.0'):
+                current_cursor = '1.0'
+
         text_widget.delete(index_start, index_end)
+
+    # Restore the cursor position
+    text_widget.mark_set(tk.INSERT, current_cursor)
 
 # Function to merge server document with local document
 def merge_document(text_widget, server_update):
@@ -81,7 +103,10 @@ def setup_text_widget_events(text_widget, client_socket):
         char = event.char
         if char:
             on_text_insert(index, char, client_socket)
+            # Insert the character locally
             text_widget.insert(index, char)
+            # Move the cursor after the inserted character
+            text_widget.mark_set(tk.INSERT, f"{index} + {len(char)}c")
         return "break"  # Prevent default behavior to avoid duplicate inserts
 
     # Track deletions
@@ -90,7 +115,9 @@ def setup_text_widget_events(text_widget, client_socket):
             index = text_widget.index(tk.INSERT)
             prev_index = text_widget.index(f"{index} -1c")
             on_text_delete(prev_index, index, client_socket)
+            # Delete the character locally
             text_widget.delete(prev_index, index)
+            # Cursor is already at the correct position
             return "break"
 
     text_widget.bind("<KeyPress>", on_key_press)
