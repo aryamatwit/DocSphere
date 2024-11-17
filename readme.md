@@ -43,8 +43,8 @@ Welcome to the **Collaborative Document Editor**! This tool enables multiple use
 
 1. **Clone the Repository**:
    ```bash
-   git clone <repository-link>
-   cd collaborative-document-editor
+   git clone "https://github.com/jamesholly1/Network-Programming-Final"
+   cd Network-Programming-Final
    ```
 
 2. **Install Dependencies**:
