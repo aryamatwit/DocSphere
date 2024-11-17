@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 import json
 
-HOST = '10.220.52.194'  # Replace with your server's IP address
+HOST = '00.00.00.00'  # Replace with your IP address
 PORT = 9999
 
 local_document = ""  # The local document content
